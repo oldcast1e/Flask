@@ -1,17 +1,23 @@
-from flask import Flask, jsonify, request, redirect, url_for
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 import os
 
 app = Flask(__name__)
 CORS(app)
 
-# 이미지 저장 경로 설정
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../asset/image')
+# 상대경로로 이미지 저장 경로 설정
+UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'asset/image')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # 폴더가 없을 경우 생성
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 최대 업로드 파일 크기 설정 (16MB)
 
+# 홈 경로 라우트 - upload.html 렌더링
+@app.route('/')
+def home():
+    return render_template('upload.html')  # templates 폴더 내 upload.html 파일을 불러옴
+
+# 이미지 파일 업로드 엔드포인트
 @app.route('/input/image', methods=['POST'])
 def upload_image():
     # 이미지 파일이 요청에 포함되어 있는지 확인
