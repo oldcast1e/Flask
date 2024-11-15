@@ -12,6 +12,7 @@
         <button type="button" onclick="uploadImage()">Upload</button>
     </form>
     <p id="responseMessage"></p>
+    <p id="fileUrl"></p>
 
     <script>
         async function uploadImage() {
@@ -32,7 +33,12 @@
                 });
 
                 const result = await response.json();
-                document.getElementById("responseMessage").innerText = result.message || "File uploaded successfully!";
+                if (result.file_url) {
+                    document.getElementById("responseMessage").innerText = result.message || "File uploaded successfully!";
+                    document.getElementById("fileUrl").innerText = "File URL: " + result.file_url;
+                } else {
+                    document.getElementById("responseMessage").innerText = result.error || "File upload failed.";
+                }
             } catch (error) {
                 document.getElementById("responseMessage").innerText = "An error occurred during upload.";
             }
