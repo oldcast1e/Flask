@@ -6,7 +6,15 @@ app = Flask(__name__)
 CORS(app)  # 모든 출처에서의 요청을 허용하도록 설정
 
 # MongoDB 클라이언트 설정
-client = MongoClient("mongodb+srv://kylhs0705:smtI18Nl4WqtRUXX@team-click.s8hg5.mongodb.net/?retryWrites=true&w=majority&appName=Team-Click")
+from pymongo import MongoClient
+
+# MongoDB 클라이언트 설정 (tls, ssl_cert_reqs=none 명시)
+client = MongoClient(
+    "mongodb+srv://kylhs0705:smtI18Nl4WqtRUXX@team-click.s8hg5.mongodb.net/?retryWrites=true&w=majority&appName=Team-Click",
+    tls=True,  # TLS 연결 활성화
+    tlsAllowInvalidCertificates=True  # SSL 인증서 무시
+)
+
 db = client.OurTime  # OurTime 데이터베이스
 collection = db.User  # User 컬렉션
 
