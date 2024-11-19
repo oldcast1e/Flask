@@ -1,9 +1,9 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # CORS 추가
 from pymongo import MongoClient  # MongoDB 연결을 위해 추가
-import os
 
-# Flask 앱 생성
 app = Flask(__name__)
+CORS(app)  # 모든 출처에서의 요청을 허용하도록 설정
 
 # MongoDB 클라이언트 설정
 client = MongoClient("mongodb+srv://kylhs0705:smtI18Nl4WqtRUXX@team-click.s8hg5.mongodb.net/?retryWrites=true&w=majority&appName=Team-Click")
