@@ -3,51 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login</title>
+    <title>Login Page</title>
+</head>
+<body>
+    <h1>로그인 페이지</h1>
+    <form id="loginForm">
+        <label for="id">아이디:</label>
+        <input type="text" id="id" name="id" required>
+        <br>
+        <label for="pw">비밀번호:</label>
+        <input type="password" id="pw" name="pw" required>
+        <br>
+        <button type="submit">로그인</button>
+    </form>
+    <p id="responseMessage"></p>
     <script>
-        async function handleLogin(event) {
-            event.preventDefault(); // 폼 제출 기본 동작 방지
+        const form = document.getElementById('loginForm');
+        const responseMessage = document.getElementById('responseMessage');
 
-            // 입력된 ID와 PW 가져오기
-            const userId = document.getElementById('id').value;
-            const userPw = document.getElementById('pw').value;
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault(); // 기본 폼 제출 방지
 
-            // Render에 배포된 Flask 서버의 /login 엔드포인트 URL
-            const url = 'https://login-juko.onrender.com/login';
-
-            // 요청 데이터
-            const data = { id: userId, pw: userPw };
+            const id = document.getElementById('id').value;
+            const pw = document.getElementById('pw').value;
 
             try {
-                // Flask 서버에 POST 요청
-                const response = await fetch(url, {
+                // Render 서버에 POST 요청 보내기
+                const response = await fetch('https://login-juko.onrender.com/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(data),
+                    body: JSON.stringify({ id, pw }),
                 });
 
-                // 응답 처리
-                const result = await response.json();
-                document.getElementById('message').textContent = result.message;
-
+                const data = await response.json();
+                if (data.status === 'success') {
+                    responseMessage.textContent = data.message;
+                    responseMessage.style.color = 'green';
+                } else {
+                    responseMessage.textContent = data.message;
+                    responseMessage.style.color = 'red';
+                }
             } catch (error) {
                 console.error('Error:', error);
-                document.getElementById('message').textContent = '서버와 통신 중 오류가 발생했습니다.';
+                responseMessage.textContent = '서버와 통신 중 오류가 발생했습니다.';
+                responseMessage.style.color = 'red';
             }
-        }
+        });
     </script>
-</head>
-<body>
-    <h1>Login Page</h1>
-    <form onsubmit="handleLogin(event)">
-        <label for="id">ID:</label>
-        <input type="text" id="id" name="id" required><br><br>
-        <label for="pw">Password:</label>
-        <input type="password" id="pw" name="pw" required><br><br>
-        <button type="submit">Login</button>
-    </form>
-    <p id="message"></p>
 </body>
 </html>

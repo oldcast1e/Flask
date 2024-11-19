@@ -4,3 +4,4 @@ requests==2.31.0
 opencv-python==4.10.0.84
 numpy==1.26.4
 openai==0.28.0
+flask-cors
