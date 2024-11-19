@@ -2,7 +2,7 @@ absl-py==2.1.0
 accumulate==1.0.0
 aiohappyeyeballs==2.3.4
 aiohttp==3.10.10
-aiosignal @ file:///home/conda/feedstock_root/build_artifacts/aiosignal_1667935791922/work
+# aiosignal @ file:///home/conda/feedstock_root/build_artifacts/aiosignal_1667935791922/work
 annotated-types @ file:///home/conda/feedstock_root/build_artifacts/annotated-types_1716290248287/work
 anyio==4.4.0
 appnope @ file:///home/conda/feedstock_root/build_artifacts/appnope_1707233003401/work
