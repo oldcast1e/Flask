@@ -1,21 +1,53 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>로그인</title>
+    <title>Login</title>
+    <script>
+        async function handleLogin(event) {
+            event.preventDefault(); // 폼 제출 기본 동작 방지
+
+            // 입력된 ID와 PW 가져오기
+            const userId = document.getElementById('id').value;
+            const userPw = document.getElementById('pw').value;
+
+            // Render에 배포된 Flask 서버의 /login 엔드포인트 URL
+            const url = 'https://login-juko.onrender.com/login';
+
+            // 요청 데이터
+            const data = { id: userId, pw: userPw };
+
+            try {
+                // Flask 서버에 POST 요청
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data),
+                });
+
+                // 응답 처리
+                const result = await response.json();
+                document.getElementById('message').textContent = result.message;
+
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('message').textContent = '서버와 통신 중 오류가 발생했습니다.';
+            }
+        }
+    </script>
 </head>
 <body>
-    <h1>로그인 페이지</h1>
-    <form action="/login" method="post">
-        <label for="id">아이디:</label><br>
+    <h1>Login Page</h1>
+    <form onsubmit="handleLogin(event)">
+        <label for="id">ID:</label>
         <input type="text" id="id" name="id" required><br><br>
-        <label for="pw">비밀번호:</label><br>
+        <label for="pw">Password:</label>
         <input type="password" id="pw" name="pw" required><br><br>
-        <button type="submit">로그인하기</button>
+        <button type="submit">Login</button>
     </form>
-    {% if message %}
-    <p>{{ message }}</p>
-    {% endif %}
+    <p id="message"></p>
 </body>
 </html>
