@@ -142,20 +142,25 @@ def upload_image():
             return jsonify({"status": "error", "message": "시간표 데이터를 추출할 수 없습니다."})
 
         # MongoDB에 저장 형식으로 데이터 변환
-        final_data = {
+        raw_data = {
             "_id": user_id,
             "info": {"name": user_name, "number": user_id},
             "schedule": extracted_schedule
         }
 
-        # MongoDB에 데이터 저장 또는 업데이트
-        collection_timetable.replace_one({"_id": user_id}, final_data, upsert=True)
+        # MongoDB에서 실제 데이터와 비교 및 업데이트
+        updated_data = update_schedule_with_mongodb(raw_data, client)
+        if not updated_data:
+            return jsonify({"status": "error", "message": "시간표 업데이트 중 오류가 발생했습니다."})
+
+        # MongoDB에 업데이트된 데이터 저장
+        collection_timetable.replace_one({"_id": user_id}, updated_data, upsert=True)
         print("[INFO] 데이터가 MongoDB에 저장되었습니다.")
 
         return jsonify({
             "status": "success",
             "message": "시간표 업로드 및 저장 완료.",
-            "timetable": extracted_schedule
+            "timetable": updated_data["schedule"]
         })
 
     except Exception as e:
@@ -221,6 +226,7 @@ def extract_table_with_clova(file):
         return None
 
 
+
 def extract_table_data(ocr_data):
     """
     OCR 응답 데이터에서 시간표 데이터를 추출합니다.
@@ -230,64 +236,39 @@ def extract_table_data(ocr_data):
             print("[ERROR] OCR JSON에 'images' 필드가 없습니다.")
             return []
 
-        # 요일 매핑
-        day_mapping = ["월요일", "화요일", "수요일", "목요일", "금요일"]
+        day_mapping = {"월": 1, "화": 2, "수": 3, "목": 4, "금": 5}
+        schedules = []
 
-        # 시간표 초기화 (9시~21시, 30분 단위)
-        time_slots = [f"{hour}:{minute:02d}" for hour in range(9, 22) for minute in (0, 30)]
-        timetable = {day: [""] * len(time_slots) for day in day_mapping}
-
-        # 셀 데이터를 유효한 값으로 필터링
-        valid_cells = [
-            cell for image in ocr_data["images"]
-            for table in image.get("tables", [])
-            for cell in table.get("cells", [])
-            if cell.get("cellTextLines")
-        ]
-
-        # 시간표 데이터 파싱
-        for cell in valid_cells:
-            column = cell["columnIndex"]
-            row = cell["rowIndex"]
-            if column == 0:  # 시간열은 건너뜀
-                continue
-            if 1 <= column <= 5:  # 월요일~금요일 컬럼
-                day = day_mapping[column - 1]
-                cell_text = ' '.join(
-                    line["cellWords"][0]["inferText"].strip()
-                    for line in cell["cellTextLines"]
-                    if "cellWords" in line and line["cellWords"]
-                )
-                if cell_text:
-                    start_hour = 9 + row // 2
-                    minute = 30 if row % 2 else 0
-                    time_index = time_slots.index(f"{start_hour}:{minute:02d}")
-                    timetable[day][time_index] = cell_text
-
-        # 시간표 데이터를 정리하여 반환
-        schedule = []
-        for day, classes in timetable.items():
-            for i, class_name in enumerate(classes):
-                if class_name.strip():
-                    start_time = time_slots[i]
-                    end_time = (
-                        f"{int(start_time[:2]) + (1 if start_time[3:] == '00' else 0)}:"
-                        f"{'30' if start_time[3:] == '00' else '00'}"
+        for image in ocr_data["images"]:
+            for table in image.get("tables", []):
+                # 표의 모든 셀 데이터 분석
+                for cell in table.get("cells", []):
+                    text_lines = cell.get("cellTextLines", [])
+                    cell_text = " ".join(
+                        [word["inferText"].strip() for line in text_lines for word in line.get("cellWords", [])]
                     )
-                    schedule.append({
-                        "class_name": class_name,
-                        "class_days": [day],
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "location": "Unknown"  # 장소 데이터가 없다면 기본값
-                    })
+                    cell_text = cell_text.replace("\n", " ").strip()
 
-        return schedule
+                    # 시간대, 요일, 강의 정보 분석
+                    if cell.get("rowIndex", -1) == 0 and cell_text in day_mapping:
+                        day = day_mapping[cell_text]
+                    elif cell_text.isdigit() and cell.get("columnIndex", -1) == 0:
+                        # 시간대 (e.g., 10시)
+                        time_slot = int(cell_text)
+                    else:
+                        schedules.append({
+                            "class_name": cell_text,
+                            "class_days": [day],
+                            "start_time": f"{time_slot:02}:00",
+                            "end_time": f"{time_slot + 1:02}:00",
+                            "location": "Unknown"
+                        })
+
+        return schedules
 
     except Exception as e:
         print(f"[ERROR] 표 데이터 추출 중 오류 발생: {e}")
         return []
-
 
 
 def analyze_schedule_with_openai(ocr_text, student_name, student_id):

@@ -1,4 +1,5 @@
 # 플라스크 기반 정확도 향상 알고리즘 추가
+# 현재 정확도 1위
 
 import os
 import time
