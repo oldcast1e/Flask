@@ -1,3 +1,6 @@
+# 플라스크 기반 정확도 향상 알고리즘 추가
+
+
 import os
 import time
 import json
