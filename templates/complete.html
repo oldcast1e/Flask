@@ -32,22 +32,7 @@
     <button id="viewCombine">시간표 합치기</button>
     <br>
 
-    <h1>시간표</h1>
-<div id="timetableContainer">
-    <table>
-        <thead>
-            <tr>
-                <th>시간</th>
-                <th>월요일</th>
-                <th>화요일</th>
-                <th>수요일</th>
-                <th>목요일</th>
-                <th>금요일</th>
-            </tr>
-        </thead>
-        <tbody id="timetableBody"></tbody>
-    </table>
-</div>
+    
 
 
 
@@ -93,21 +78,6 @@
         });
 
     </script>
-    <script src="table.js"></script>
-    <script>
-        // 사용자 정보 가져오기
-        //const userId = localStorage.getItem('userId');
-        //const userName = localStorage.getItem('userName');
-
-        // Timetable 객체 생성 및 초기화
-        if (userId && userName) {
-            const timetable = new Timetable(userId, userName);
-            timetable.displayUserInfo();
-            timetable.fetchTimetable();
-        } else {
-            alert('로그인 정보가 없습니다. 로그인 페이지로 이동합니다.');
-            window.location.href = 'main.html';
-        }
-    </script>
+    
 </body>
 </html>

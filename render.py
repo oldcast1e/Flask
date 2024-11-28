@@ -158,14 +158,17 @@ def extract_ocr_text(ocr_data):
 def analyze_schedule_with_openai(ocr_text, student_name, student_id):
     prompt = f"""
     Analyze the following OCR data and organize it as a class schedule. Each schedule entry should contain:
-    - Class name (without spaces),
-    - Class days (represented as 1 for Monday to 5 for Friday),
-    - Class start and end times (formatted as HH:MM, 24-hour time),
-    - Location (classroom or hall).
+    - class_name: Class name (without spaces),
+    - class_days: List of integers (1 for Monday to 5 for Friday),
+    - start_time: Start time (formatted as HH:MM, 24-hour time),
+    - end_time: End time (formatted as HH:MM, 24-hour time),
+    - location: Location (classroom or hall).
 
+    Ensure the output is a valid JSON array containing the entries.
     OCR data: {ocr_text}
     """
     try:
+        # OpenAI ChatCompletion 호출
         response = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
@@ -180,21 +183,39 @@ def analyze_schedule_with_openai(ocr_text, student_name, student_id):
         if not response_text:
             return None
 
+        # JSON 응답 추출
         json_match = re.search(r'\{.*\}|\[.*\]', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group(0)
         else:
+            print("[ERROR] OpenAI 응답에서 JSON 데이터를 찾을 수 없습니다.")
             return None
 
+        # JSON 데이터 로드
         schedule_data = json.loads(response_text)
+
+        # 데이터 형식 변환
+        formatted_schedule = []
+        for entry in schedule_data:
+            formatted_entry = {
+                "class_name": entry.get("class_name", "").strip(),
+                "class_days": [{"$numberInt": str(day)} for day in entry.get("class_days", [])],
+                "start_time": entry.get("start_time", "").strip(),
+                "end_time": entry.get("end_time", "").strip(),
+                "location": entry.get("location", "").strip()
+            }
+            formatted_schedule.append(formatted_entry)
+
+        # 최종 데이터 반환
         return {
             "_id": student_id,
             "info": {"name": student_name, "number": student_id},
-            "schedule": schedule_data
+            "schedule": formatted_schedule
         }
     except Exception as e:
         print(f"[ERROR] OpenAI API 호출 오류: {e}")
         return None
+
 
 
 if __name__ == "__main__":
