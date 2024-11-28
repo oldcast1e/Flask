@@ -25,16 +25,14 @@ db = client.OurTime
 collection_timetable = db.timetable
 collection_user = db.User
 
-# API 키 로드 함수
-def load_api_key(file_path):
-    with open(file_path, "r") as file:
-        return file.read().strip()
+# Render 환경 변수에서 API 키 로드
+CLOVA_API_URL = os.environ.get("CLOVA_API_URL")
+CLOVA_SECRET_KEY = os.environ.get("CLOVA_SECRET_KEY")
+openai.api_key = os.environ.get("OPENAI_API_KEY")
 
-# API 키 로드
-BASE_DIR = os.path.dirname(__file__)
-CLOVA_API_URL = load_api_key(os.path.join(BASE_DIR, "key", "CLOVA_API_URL.txt"))
-CLOVA_SECRET_KEY = load_api_key(os.path.join(BASE_DIR, "key", "CLOVA_SECRET_KEY.txt"))
-openai.api_key = load_api_key(os.path.join(BASE_DIR, "key", "openai_api_key.txt"))
+# 환경 변수 검증
+if not CLOVA_API_URL or not CLOVA_SECRET_KEY or not openai.api_key:
+    raise ValueError("환경 변수가 설정되지 않았습니다. Render 대시보드에서 확인하세요.")
 
 
 @app.route('/upload-image', methods=['POST'])
@@ -72,24 +70,17 @@ def upload_image():
         if not ocr_data:
             print("[ERROR] 클로바 OCR 처리 실패.")
             return jsonify({"status": "error", "message": "OCR 처리 중 오류 발생."})
-        # print(f"[DEBUG] OCR 데이터: {ocr_data}")
 
         # OpenAI GPT API로 시간표 문서화
         ocr_text = extract_ocr_text(ocr_data)
         if not ocr_text:
             print("[ERROR] OCR 데이터에서 텍스트를 추출하지 못했습니다.")
             return jsonify({"status": "error", "message": "OCR 데이터에서 텍스트 추출 실패."})
-        # print(f"[DEBUG] OCR 텍스트: {ocr_text}")
 
         final_data = analyze_schedule_with_openai(ocr_text, student_name=user_name, student_id=user_id)
         if not final_data:
             print("[ERROR] OpenAI GPT API 처리 실패.")
             return jsonify({"status": "error", "message": "OpenAI API 처리 중 오류 발생."})
-
-        # <- DB에 있는 시간표랑 비교해서 json 수정
-        #
-        #
-
 
         # MongoDB에 데이터 저장
         collection_timetable.replace_one({"_id": user_id}, final_data, upsert=True)
@@ -100,9 +91,7 @@ def upload_image():
 
     except Exception as e:
         print(f"[ERROR] {e}")
-        traceback.print_exc()
         return jsonify({"status": "error", "message": "서버 오류 발생."})
-
 
 
 def process_image(image_path):

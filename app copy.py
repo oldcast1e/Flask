@@ -67,7 +67,7 @@ def get_timetable():
                     "class_name": f"{class_name} ({location})"
                 })
 
-        # print("DEBUG: Processed timetable:", schedule)  # 디버깅 출력
+        print("DEBUG: Processed timetable:", schedule)  # 디버깅 출력
         return jsonify({"status": "success", "timetable": schedule})
     except Exception as e:
         print(f"ERROR: {str(e)}")  # 디버깅 출력
