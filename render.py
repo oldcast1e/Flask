@@ -30,6 +30,12 @@ CLOVA_API_URL = os.environ.get("CLOVA_API_URL")
 CLOVA_SECRET_KEY = os.environ.get("CLOVA_SECRET_KEY")
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
+# 환경 변수 디버깅 출력
+print(f"[DEBUG] CLOVA_API_URL: {CLOVA_API_URL}")
+print(f"[DEBUG] CLOVA_SECRET_KEY: {CLOVA_SECRET_KEY}")
+print(f"[DEBUG] OPENAI_API_KEY: {openai.api_key}")
+
+
 # 환경 변수 검증
 if not CLOVA_API_URL or not CLOVA_SECRET_KEY or not openai.api_key:
     raise ValueError("환경 변수가 설정되지 않았습니다. Render 대시보드에서 확인하세요.")
@@ -192,4 +198,5 @@ def analyze_schedule_with_openai(ocr_text, student_name, student_id):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002)
+    port = int(os.environ.get("PORT", 5000))  # Render의 PORT 환경 변수 사용
+    app.run(host="0.0.0.0", port=port)

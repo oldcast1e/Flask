@@ -92,7 +92,7 @@
 
           try {
               // 서버로 POST 요청 보내기
-              const response = await fetch('http://172.16.32.162:5002/upload-image', {
+              const response = await fetch('https://flask-xrjv.onrender.com/upload-image', {
                   method: 'POST',
                   body: formData,
               });
