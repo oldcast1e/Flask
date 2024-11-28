@@ -2,106 +2,72 @@ class Timetable {
     constructor(userId, userName) {
         this.userId = userId;
         this.userName = userName;
-        // this.apiUrl = 'https://flask-xrjv.onrender.com/get_timetable'; // Render 서버 URL
-        this.apiUrl = 'http://127.0.0.1:5001/get_timetable'; // Render 서버 URL
-        this.tableBody = document.getElementById('timetableBody');
-        this.container = document.getElementById('timetableContainer');
-        this.userInfoDiv = document.getElementById('userInfo');
     }
 
+    // 사용자 정보 표시
     displayUserInfo() {
-        this.userInfoDiv.textContent = `현재 사용자: ID - ${this.userId}, 이름 - ${this.userName}`;
+        const userInfoDiv = document.getElementById('userInfo');
+        userInfoDiv.textContent = `사용자: ${this.userName} (${this.userId})`;
     }
 
-    fetchTimetable() {
-        fetch(this.apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: this.userId }),
-        })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    this.renderTimetable(data.timetable.schedule); // JSON 데이터의 schedule 사용
-                } else {
-                    this.displayNoTimetableMessage();
-                }
-            })
-            .catch(error => console.error('Error:', error));
+    // 시간표 데이터를 가져와 테이블에 렌더링
+    async fetchTimetable() {
+        try {
+            const response = await fetch('http://127.0.0.1:5001/get_timetable', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ id: this.userId }),
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                this.renderTimetable(data.timetable);
+            } else {
+                console.error('시간표 데이터를 가져오지 못했습니다:', data.message);
+                alert(data.message);
+            }
+        } catch (error) {
+            console.error('서버와 통신 중 오류가 발생했습니다:', error);
+            alert('서버와 통신 중 오류가 발생했습니다.');
+        }
     }
 
-    renderTimetable(schedule) {
-        this.tableBody.innerHTML = ''; // 초기화
-        const timeSlots = Array.from({ length: 18 }, (_, i) => {
-            const hours = 9 + Math.floor(i);
-            return `${hours}:00`;
-        });
+    // 시간표 데이터 렌더링
+    renderTimetable(timetable) {
+        const timetableBody = document.getElementById('timetableBody');
+        const days = ['월요일', '화요일', '수요일', '목요일', '금요일'];
 
-        timeSlots.forEach(slot => {
-            const row = document.createElement('tr');
-            const timeCell = document.createElement('td');
-            timeCell.textContent = slot;
-            row.appendChild(timeCell);
+        // 시간표 초기화
+        const rows = {};
 
-            for (let day = 1; day <= 5; day++) {
-                const cell = document.createElement('td');
-                const classes = schedule.filter(item =>
-                    item.Class_days.some(d => d.$numberInt == day) &&
-                    item.Class_start_time === slot
-                );
-                if (classes.length > 0) {
-                    cell.textContent = `${classes[0].Class_name} (${classes[0].Location})`;
-                    cell.rowSpan = parseInt(classes[0].Class_end_time.split(':')[0]) - parseInt(classes[0].Class_start_time.split(':')[0]);
-                    timeCell.style.verticalAlign = "middle"; // 중간 정렬
-                }
-                row.appendChild(cell);
+        timetable.forEach((entry) => {
+            const { day, time, class_name } = entry;
+
+            if (!rows[time]) {
+                rows[time] = Array(5).fill(''); // 월~금 빈 셀 초기화
             }
 
-            this.tableBody.appendChild(row);
-        });
-    }
-
-    displayNoTimetableMessage() {
-        this.container.innerHTML = ''; // 기존 콘텐츠 초기화
-
-        const message = document.createElement('p');
-        message.textContent = "시간표가 없습니다!";
-        message.style.fontSize = '18px';
-        message.style.color = 'red';
-        message.style.textAlign = 'center';
-        this.container.appendChild(message);
-
-        const uploadButton = document.createElement('button');
-        uploadButton.textContent = '이미지 업로드 페이지로 이동';
-        uploadButton.style.marginTop = '20px';
-        uploadButton.style.padding = '10px 20px';
-        uploadButton.style.backgroundColor = '#b93234';
-        uploadButton.style.color = 'white';
-        uploadButton.style.border = 'none';
-        uploadButton.style.borderRadius = '5px';
-        uploadButton.style.cursor = 'pointer';
-
-        uploadButton.addEventListener('click', () => {
-            window.location.href = 'imageUpload.html';
+            // 요일에 해당하는 셀 채우기
+            rows[time][day - 1] = class_name;
         });
 
-        this.container.appendChild(uploadButton);
+        // 테이블 렌더링
+        Object.entries(rows).forEach(([time, classes]) => {
+            const row = document.createElement('tr');
+            const timeCell = document.createElement('td');
+            timeCell.textContent = time;
+            row.appendChild(timeCell);
+
+            classes.forEach((classInfo) => {
+                const cell = document.createElement('td');
+                cell.textContent = classInfo || '';
+                row.appendChild(cell);
+            });
+
+            timetableBody.appendChild(row);
+        });
     }
 }
-
-// 사용자 정보 가져오기
-document.addEventListener('DOMContentLoaded', () => {
-    const userId = localStorage.getItem('userId');
-    const userName = localStorage.getItem('userName');
-
-    if (userId && userName) {
-        const timetable = new Timetable(userId, userName);
-        timetable.displayUserInfo();
-        timetable.fetchTimetable();
-    } else {
-        alert('로그인 정보가 없습니다. 로그인 페이지로 이동합니다.');
-        window.location.href = 'main.html';
-    }
-});
-
-        

@@ -44,13 +44,10 @@ def get_timetable():
     try:
         data = request.json
         user_id = data.get("id")
-        print(f"DEBUG: Received ID from front-end: {user_id}")  # 디버깅 출력
 
-        # MongoDB 쿼리
         timetable = timetable_collection.find_one({"_id": user_id})
 
         if not timetable:
-            print("DEBUG: No timetable found for user ID:", user_id)  # 디버깅 출력
             return jsonify({"status": "error", "message": "시간표를 찾을 수 없습니다."})
 
         # 시간표 데이터 가공
@@ -60,18 +57,29 @@ def get_timetable():
             start_time = entry.get("start_time", "")
             end_time = entry.get("end_time", "")
             location = entry.get("location", "")
+
+            # class_days에서 $numberInt 값을 추출하여 처리
+            class_days = []
             for day in entry.get("class_days", []):
+                if isinstance(day, dict) and "$numberInt" in day:
+                    class_days.append(int(day["$numberInt"]))
+                else:
+                    # day가 정수형으로 저장된 경우
+                    class_days.append(int(day))
+
+            # 요일별 시간표 추가
+            for day in class_days:
                 schedule.append({
-                    "day": int(day),  # 숫자 변환
+                    "day": day,
                     "time": f"{start_time}-{end_time}",
                     "class_name": f"{class_name} ({location})"
                 })
 
-        # print("DEBUG: Processed timetable:", schedule)  # 디버깅 출력
         return jsonify({"status": "success", "timetable": schedule})
     except Exception as e:
         print(f"ERROR: {str(e)}")  # 디버깅 출력
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
 
 @app.route('/get_friends', methods=['POST'])
 def get_friends():
