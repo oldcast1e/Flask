@@ -10,13 +10,18 @@ document.addEventListener("DOMContentLoaded", function () {
     // 오전 9시 ~ 오후 9시 시간 배열 생성
     const hours = Array.from({ length: 13 }, (_, i) => `${9 + i}:00`);
 
-    // localStorage에서 사용자 ID 가져오기
+    // localStorage에서 사용자 ID 및 이름 가져오기
     const userId = localStorage.getItem("userId");
-    if (!userId) {
+    const userName = localStorage.getItem("userName");
+
+    if (!userId || !userName) {
         errorMessage.style.display = "block";
         errorMessage.textContent = "사용자 정보를 찾을 수 없습니다.";
         return;
     }
+
+    // 사용자 이름 표시 (localStorage에서 가져옴)
+    userInfoDiv.textContent = `${userName}님의 시간표`;
 
     // 시간표 데이터 로드
     async function loadTimetable() {
@@ -34,19 +39,17 @@ document.addEventListener("DOMContentLoaded", function () {
             loadingMessage.style.display = "none";
 
             if (data.status === "error") {
-                // 시간표가 없으면 imageUpload.html로 이동
                 window.location.href = "imageUpload.html";
                 return;
             }
 
-            // 사용자 정보 표시
-            const userInfo = data.user_info;
+            // API 응답에서 사용자 정보 가져오기 (기본값 처리)
+            const userInfo = data.user_info || { name: userName, number: "알 수 없음" };
             userInfoDiv.textContent = `${userInfo.name} (${userInfo.number})님의 시간표`;
 
             // 시간표 데이터 처리
             const schedule = data.timetable.schedule;
             if (schedule.length === 0) {
-                // 시간표가 비어있으면 imageUpload.html로 이동
                 window.location.href = "imageUpload.html";
                 return;
             }
@@ -67,8 +70,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             // 테이블 생성
             generateTable(tableData);
-        } 
-        catch (error) {
+        } catch (error) {
             loadingMessage.style.display = "none";
             errorMessage.style.display = "block";
             errorMessage.textContent = `시간표를 불러오는 데 실패했습니다: ${error.message}`;

@@ -47,14 +47,15 @@ def get_timetable():
         data = request.json
         user_id = data.get("id")
         
-        # MongoDB 조회
+        # MongoDB에서 시간표 데이터 조회
         timetable = timetable_collection.find_one({"_id": user_id})
         if not timetable:
-            return jsonify({"status": "error", "message": f"시간표를 찾을 수 없습니다. ID: {user_id}"})
+            return jsonify({"status": "error", "message": "시간표를 찾을 수 없습니다."})
+        
+        # 사용자 정보 기본값 처리
+        user_info = timetable.get("info", {"name": "알 수 없음", "number": "0000"})
 
-        # Debugging: 반환된 데이터 출력
-        # print("DEBUG: Retrieved Timetable:", timetable)
-
+        # 시간표 데이터 가공
         schedule = []
         for entry in timetable.get("schedule", []):
             class_name = entry.get("class_name", "")
@@ -77,14 +78,13 @@ def get_timetable():
                     "location": location
                 })
 
-        # 최종 응답 JSON
+        # JSON 응답
         return jsonify({
             "status": "success",
+            "user_info": user_info,
             "timetable": {"schedule": schedule}
         })
     except Exception as e:
-        # 디버깅 메시지 출력
-        print(f"ERROR: {str(e)}")
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
 
 
