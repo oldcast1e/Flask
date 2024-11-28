@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>시간표</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid black;
+            text-align: center;
+            padding: 8px;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .userinfo {
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="userinfo" id="userInfo"></div>
+    <h1>시간표</h1>
+<div id="timetableContainer">
+    <table>
+        <thead>
+            <tr>
+                <th>시간</th>
+                <th>월요일</th>
+                <th>화요일</th>
+                <th>수요일</th>
+                <th>목요일</th>
+                <th>금요일</th>
+            </tr>
+        </thead>
+        <tbody id="timetableBody"></tbody>
+    </table>
+</div>
+
+<script src="table.js"></script>
+<script>
+    // 사용자 정보 가져오기
+    //const userId = localStorage.getItem('userId');
+    //const userName = localStorage.getItem('userName');
+
+    // Timetable 객체 생성 및 초기화
+    if (userId && userName) {
+        const timetable = new Timetable(userId, userName);
+        timetable.displayUserInfo();
+        timetable.fetchTimetable();
+    } else {
+        alert('로그인 정보가 없습니다. 로그인 페이지로 이동합니다.');
+        window.location.href = 'main.html';
+    }
+</script>
+</body>
+</html>

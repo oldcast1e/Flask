@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>이미지 업로드</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      background-color: #f9f9f9;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    h2 {
+      color: #b93234;
+      margin-bottom: 20px;
+    }
+    form {
+      text-align: center;
+    }
+    #message {
+      margin-top: 20px;
+      font-size: 16px;
+      color: green;
+      display: none;
+    }
+    #error {
+      margin-top: 20px;
+      font-size: 16px;
+      color: red;
+      display: none;
+    }
+    #homeButton {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      display: none;
+    }
+    #homeButton:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <h1>시간표 이미지 업로드</h1>
+  <form id="imageUploadForm">
+      <label for="imageInput">이미지 선택:</label>
+      <input type="file" id="imageInput" accept="image/*" required>
+      <br><br>
+      <button type="button" id="uploadButton">업로드</button>
+  </form>
+  <p id="responseMessage"></p>
+  <button id="homeButton" style="display: none;">홈으로 이동</button>
+
+  <script>
+      const uploadButton = document.getElementById('uploadButton');
+      const responseMessage = document.getElementById('responseMessage');
+      const homeButton = document.getElementById('homeButton');
+
+      uploadButton.addEventListener('click', async () => {
+          // localStorage에서 userId와 userName 가져오기
+          const userId = localStorage.getItem('userId');
+          const userName = localStorage.getItem('userName');
+
+          if (!userId || !userName) {
+              responseMessage.textContent = '로그인 정보가 없습니다. 다시 로그인 해주세요.';
+              responseMessage.style.color = 'red';
+              return;
+          }
+
+          const fileInput = document.getElementById('imageInput');
+          if (fileInput.files.length === 0) {
+              responseMessage.textContent = '이미지를 선택해 주세요.';
+              responseMessage.style.color = 'red';
+              return;
+          }
+
+          const file = fileInput.files[0];
+          const formData = new FormData();
+          formData.append('userId', userId);
+          formData.append('userName', userName);
+          formData.append('image', file);
+
+          try {
+              // 서버로 POST 요청 보내기
+              const response = await fetch('http://172.16.32.162:5002/upload-image', {
+                  method: 'POST',
+                  body: formData,
+              });
+
+              if (response.ok) {
+                  const data = await response.json();
+                  responseMessage.textContent = '이미지 업로드 성공!';
+                  responseMessage.style.color = 'green';
+                  homeButton.style.display = 'block'; // 홈 버튼 표시
+              } else {
+                  const errorData = await response.json();
+                  throw new Error(errorData.message || '서버 오류');
+              }
+          } catch (error) {
+              console.error('Error:', error.message);
+              responseMessage.textContent = `업로드 실패: ${error.message}`;
+              responseMessage.style.color = 'red';
+          }
+      });
+
+      homeButton.addEventListener('click', () => {
+          window.location.href = 'main.html'; // 홈 페이지로 이동
+      });
+  </script>
+</body>
+</html>
