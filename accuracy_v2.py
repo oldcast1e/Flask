@@ -1,6 +1,5 @@
 # 플라스크 기반 정확도 향상 알고리즘 추가
 
-
 import os
 import time
 import json
@@ -13,6 +12,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
 import re
+from fuzzywuzzy import fuzz
 
 # Flask 설정
 app = Flask(__name__)
@@ -116,67 +116,45 @@ def get_timetable():
 @app.route('/upload-image', methods=['POST'])
 def upload_image():
     try:
-        # 사용자 정보 가져오기
         user_id = request.form.get("userId")
         user_name = request.form.get("userName")
-        print(f"[DEBUG] userId: {user_id}, userName: {user_name}")
 
         if not user_id or not user_name:
             return jsonify({"status": "error", "message": "사용자 정보가 누락되었습니다."})
 
-        #1. 사용자 정보 확인
+        # 1. 사용자 정보 확인
         user = collection_user.find_one({"_id": user_id})
         if not user:
             return jsonify({"status": "error", "message": "사용자 정보가 존재하지 않습니다."})
 
-        #2. 이미지 파일 처리
+        # 2. 이미지 파일 처리
         if "image" not in request.files:
-            print("[DEBUG] 이미지 파일이 요청에 포함되지 않았습니다.")
             return jsonify({"status": "error", "message": "이미지 파일이 필요합니다."})
         file = request.files["image"]
-        print(f"[DEBUG] 업로드된 파일: {file.filename}")
-        file_path = f"/tmp/{uuid.uuid4()}.png"
-        file.save(file_path)
-        print(f"[DEBUG] 파일이 저장된 경로: {file_path}")
 
-        #3. 이미지 전처리
-        processed_image_path = process_image(file_path)
-        print(f"[DEBUG] 전처리된 이미지 경로: {processed_image_path}")
-
-        #4. 클로바 OCR 처리
-        ocr_data = extract_text_with_clova(processed_image_path)
+        # 클로바 OCR 호출
+        ocr_data = extract_table_with_clova(file)
         if not ocr_data:
-            print("[ERROR] 클로바 OCR 처리 실패.")
-            return jsonify({"status": "error", "message": "OCR 처리 중 오류 발생."})
+            return jsonify({"status": "error", "message": "OCR 처리 중 오류가 발생했습니다."})
 
-        #5. OCR 텍스트 추출
-        ocr_text = extract_ocr_text(ocr_data)
-        if not ocr_text:
-            print("[ERROR] OCR 데이터에서 텍스트를 추출하지 못했습니다.")
-            return jsonify({"status": "error", "message": "OCR 데이터에서 텍스트 추출 실패."})
-
-        #6. OpenAI GPT API로 시간표 분석
-        final_data = analyze_schedule_with_openai(ocr_text, student_name=user_name, student_id=user_id)
+        # 3. OCR 데이터 분석
+        final_data = analyze_schedule_with_openai(ocr_data, user_name, user_id)
         if not final_data:
-            print("[ERROR] OpenAI GPT API 처리 실패.")
-            return jsonify({"status": "error", "message": "OpenAI API 처리 중 오류 발생."})
+            return jsonify({"status": "error", "message": "시간표 분석 중 오류가 발생했습니다."})
 
-        #7. 실제 시간표와 비교하여 업데이트
-        updated_data = update_schedule_with_mongodb(final_data, client)
-        if not updated_data:
-            return jsonify({"status": "error", "message": "시간표 업데이트 중 오류 발생."})
-
-        #8. MongoDB에 데이터 저장
-        collection_timetable.replace_one({"_id": user_id}, updated_data, upsert=True)
+        # 4. MongoDB에 저장
+        collection_timetable.replace_one({"_id": user_id}, final_data, upsert=True)
         print("[INFO] 데이터가 MongoDB에 저장되었습니다.")
 
-        # 성공 응답 반환
-        return jsonify({"status": "success", "message": "업로드 및 분석 완료."})
+        # 성공 응답
+        return jsonify({
+            "status": "success",
+            "message": "시간표 업로드 및 저장 완료.",
+        })
 
     except Exception as e:
         print(f"[ERROR] {e}")
-        traceback.print_exc()
-        return jsonify({"status": "error", "message": "서버 오류 발생."})
+        return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
 
 
 
@@ -196,44 +174,71 @@ def process_image(image_path):
     return output_path
 
 
-def extract_text_with_clova(file_path):
+def extract_table_with_clova(file):
+    """
+    네이버 클로바 OCR API를 사용하여 이미지에서 표 데이터를 추출.
+    """
     try:
-        files = [('file', open(file_path, 'rb'))]
-        headers = {'X-OCR-SECRET': CLOVA_SECRET_KEY}
+        # 요청 헤더 설정
+        headers = {
+            'X-OCR-SECRET': CLOVA_SECRET_KEY
+        }
+
+        # 요청 페이로드
         payload = {
             'message': json.dumps({
                 'version': 'V2',
                 'requestId': str(uuid.uuid4()),
-                'timestamp': int(round(time.time() * 1000)),
-                'images': [{'format': 'jpg', 'name': os.path.basename(file_path)}]
+                'timestamp': int(time.time() * 1000),
+                'images': [
+                    {
+                        'format': 'jpg',  # 이미지 포맷
+                        'name': 'table_image',
+                        'type': 'TABLE'  # 표 인식 설정
+                    }
+                ]
             })
         }
+
+        # 파일 전송
+        files = {'file': (file.filename, file.stream, file.content_type)}
         response = requests.post(CLOVA_API_URL, headers=headers, data=payload, files=files)
+
+        # 응답 확인
         if response.status_code == 200:
             return response.json()
         else:
             print(f"[ERROR] OCR API error: {response.status_code}")
             return None
+
     except Exception as e:
-        print(f"[ERROR] OCR 호출 중 오류 발생: {e}")
+        print(f"[ERROR] 클로바 OCR 호출 중 오류 발생: {e}")
         return None
 
 
-def extract_ocr_text(ocr_data):
+
+def extract_table_data(ocr_data):
+    """
+    OCR 응답 데이터에서 표 데이터를 추출합니다.
+    """
     try:
         if "images" not in ocr_data:
             print("[ERROR] OCR JSON에 'images' 필드가 없습니다.")
-            return ""
+            return []
 
-        extracted_texts = []
+        tables = []
         for image in ocr_data.get("images", []):
-            if "fields" in image:
-                for field in image["fields"]:
-                    extracted_texts.append(field.get("inferText", ""))
-        return " ".join(extracted_texts)
+            if "tables" in image:  # 표 데이터 필드 확인
+                for table in image["tables"]:
+                    rows = []
+                    for row in table.get("cells", []):
+                        rows.append([cell.get("text", "") for cell in row])
+                    tables.append(rows)
+        return tables
     except Exception as e:
-        print(f"[ERROR] OCR 텍스트 추출 중 오류 발생: {e}")
-        return ""
+        print(f"[ERROR] 표 데이터 추출 중 오류 발생: {e}")
+        return []
+
 
 
 def analyze_schedule_with_openai(ocr_text, student_name, student_id):
@@ -274,6 +279,8 @@ def analyze_schedule_with_openai(ocr_text, student_name, student_id):
     6. **Output considerations**:
     - If the OCR data contains irrelevant text or non-class-related entries, exclude them from the final schedule.
     - For incomplete data, structure the entry with the available information, leaving missing fields empty.
+
+
 
     Here is the OCR data extracted from the timetable image: {ocr_text}
     """
@@ -327,39 +334,46 @@ def update_schedule_with_mongodb(final_data, mongodb_client, db_name="OurTime", 
 
         # 시간표 업데이트 로직
         for item in user_schedule:
-            ocr_name = item.get("class_name", "")
+            ocr_name = item.get("class_name", "").strip()
             ocr_start_time = item.get("start_time", "")
             ocr_end_time = item.get("end_time", "")
 
+            if not ocr_name:
+                print("[WARNING] OCR 수업 이름이 비어 있습니다. 항목 건너뜁니다.")
+                continue
+
+            # 수업 이름과 가장 비슷한 항목 찾기
             best_match = None
-            best_score = 0
+            best_name_score = 0
 
             for actual in actual_schedules:
-                actual_name = actual.get("class_name", "")
-                actual_start_time = actual.get("start_time", "")
-                actual_end_time = actual.get("end_time", "")
-                actual_days = actual.get("class_days", [])
+                actual_name = actual.get("class_name", "").strip()
 
-                # 유사도 계산 (Fuzzy Matching)
-                name_score = fuzz.token_sort_ratio(ocr_name, actual_name) * 0.5
-                start_time_score = fuzz.ratio(ocr_start_time, actual_start_time) * 0.25 if actual_start_time else 0
-                end_time_score = fuzz.ratio(ocr_end_time, actual_end_time) * 0.25 if actual_end_time else 0
-                total_score = name_score + start_time_score + end_time_score
-
-                # 최고 유사도 갱신
-                if total_score > best_score:
+                # 유사도 계산
+                name_score = fuzz.token_sort_ratio(ocr_name, actual_name)
+                if name_score > best_name_score and name_score >= 50:  # 50% 이상만 고려
                     best_match = actual
-                    best_score = total_score
+                    best_name_score = name_score
 
-            # 유사도가 80% 이상일 경우 업데이트
-            if best_match and best_score >= 80:
+            # 수업 이름 덮어쓰기
+            if best_match:
+                print(f"[INFO] {ocr_name} => {best_match['class_name']} (유사도: {best_name_score}%)")
                 item["class_name"] = best_match["class_name"]
                 item["class_days"] = best_match.get("class_days", [])
-                item["start_time"] = best_match.get("start_time", "")
-                item["end_time"] = best_match.get("end_time", "")
-                item["location"] = best_match.get("location", "Unknown")
 
-                print(f"[INFO] 업데이트된 항목: {item}")
+                # 수업 시간 비교 및 업데이트
+                if "start_time" in best_match and "end_time" in best_match:
+                    ocr_duration = time_difference_in_minutes(ocr_start_time, ocr_end_time)
+                    db_duration = time_difference_in_minutes(
+                        best_match.get("start_time", ""), best_match.get("end_time", "")
+                    )
+
+                    # 시간 비교 후 업데이트
+                    if abs(ocr_duration - db_duration) <= 30:  # 30분 이내 차이 허용
+                        item["start_time"] = best_match["start_time"]
+                        item["end_time"] = best_match["end_time"]
+
+                item["location"] = best_match.get("location", "Unknown")
 
         # 업데이트된 시간표 반환
         final_data["schedule"] = user_schedule
@@ -370,6 +384,106 @@ def update_schedule_with_mongodb(final_data, mongodb_client, db_name="OurTime", 
         print(f"[ERROR] 시간표 업데이트 중 오류 발생: {e}")
         return None
 
+
+def time_difference_in_minutes(start_time, end_time):
+    """
+    수업 시간 차이를 계산합니다. (분 단위)
+    """
+    try:
+        start = time.strptime(start_time, "%H:%M")
+        end = time.strptime(end_time, "%H:%M")
+        return (end.tm_hour * 60 + end.tm_min) - (start.tm_hour * 60 + start.tm_min)
+    except Exception:
+        return float("inf")  # 유효하지 않은 시간일 경우 무한대 반환
+
+def calculate_accuracy(table_data, ground_truth):
+    try:
+        correct = 0
+        total = 0
+
+        for ocr_row, gt_row in zip(table_data, ground_truth):
+            for ocr_cell, gt_cell in zip(ocr_row, gt_row):
+                total += 1
+                if ocr_cell.strip() == gt_cell.strip():
+                    correct += 1
+
+        return correct / total if total > 0 else 0
+    except Exception as e:
+        print(f"[ERROR] 정확도 계산 중 오류 발생: {e}")
+        return 0
+
+def process_ocr_data(ocr_data):
+    """
+    네이버 OCR JSON 데이터를 분석하여 시간표 데이터로 정리.
+    """
+    try:
+        tables = ocr_data.get('images', [])[0].get('tables', [])
+        processed_schedule = []
+
+        # 요일 매핑
+        day_mapping = {"월": 1, "화": 2, "수": 3, "목": 4, "금": 5}
+
+        for table in tables:
+            rows = table.get('cells', [])
+            schedule = {}
+
+            for cell in rows:
+                text_lines = cell.get('cellTextLines', [])
+                for line in text_lines:
+                    text = line.get('cellWords', [{}])[0].get('inferText', '').strip()
+                    
+                    # 요일 매핑
+                    if text in day_mapping:
+                        schedule["class_days"] = [{"$numberInt": str(day_mapping[text])}]
+
+                    # 강의명 및 위치 추출
+                    elif "class_name" not in schedule and text:
+                        schedule["class_name"] = text
+                    elif "location" not in schedule and text:
+                        schedule["location"] = text
+
+            # 시작 시간과 종료 시간 (예시로 2시간 단위 설정)
+            schedule["start_time"] = "10:00"  # 기본값, 필요 시 로직 수정
+            schedule["end_time"] = "12:00"  # 기본값, 필요 시 로직 수정
+
+            if schedule:
+                processed_schedule.append(schedule)
+
+        return processed_schedule
+
+    except Exception as e:
+        print(f"[ERROR] OCR 데이터 처리 중 오류 발생: {e}")
+        return []
+
+def format_schedule_for_db(user_id, user_name, schedule_data):
+    """
+    사용자 시간표 데이터를 MongoDB에 저장할 형식으로 변환.
+    """
+    try:
+        formatted_data = {
+            "_id": user_id,
+            "info": {
+                "name": user_name,
+                "number": user_id
+            },
+            "schedule": schedule_data
+        }
+        return formatted_data
+    except Exception as e:
+        print(f"[ERROR] 시간표 데이터 변환 중 오류 발생: {e}")
+        return None
+
+def calculate_time_slots(start_hour, duration=2):
+    """
+    시작 시간을 기준으로 시간 슬롯 계산.
+    """
+    try:
+        start_time = f"{start_hour:02}:00"
+        end_time = f"{(start_hour + duration) % 24:02}:00"
+        return start_time, end_time
+    except Exception as e:
+        print(f"[ERROR] 시간 계산 중 오류 발생: {e}")
+        return "", ""
 
 
 if __name__ == "__main__":
