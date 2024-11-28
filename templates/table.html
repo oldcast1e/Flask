@@ -58,31 +58,5 @@
     </div>
 
     <script src="table.js"></script>
-    <script>
-        // 사용자 정보 가져오기
-        const userId = localStorage.getItem('userId');
-        const userName = localStorage.getItem('userName');
-
-        if (userId && userName) {
-            // Timetable 객체 생성 및 초기화
-            const timetable = new Timetable(userId, userName);
-            timetable.displayUserInfo();
-
-            // 로딩 메시지 표시
-            document.getElementById('loadingMessage').style.display = 'block';
-
-            timetable.fetchTimetable()
-                .then(() => {
-                    // 로딩 메시지 숨기기
-                    document.getElementById('loadingMessage').style.display = 'none';
-                })
-                .catch(() => {
-                    // 로딩 메시지 숨기기 및 오류 메시지 표시
-                    document.getElementById('loadingMessage').style.display = 'none';
-                    document.getElementById('errorMessage').style.display = 'block';
-                });
-        } else {
-            alert('로그인 정보가 없습니다. 로그인 페이지로 이동합니다.');
-            window.location.href = 'main.html';
-        }
-   
+</body>
+</html>

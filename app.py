@@ -44,14 +44,14 @@ def get_timetable():
     try:
         data = request.json
         user_id = data.get("id")
-        print(f"DEBUG: Received ID from front-end: {user_id}")  # 디버깅 출력
 
-        # MongoDB 쿼리
         timetable = timetable_collection.find_one({"_id": user_id})
 
         if not timetable:
-            print("DEBUG: No timetable found for user ID:", user_id)  # 디버깅 출력
             return jsonify({"status": "error", "message": "시간표를 찾을 수 없습니다."})
+
+        # 사용자 정보
+        user_info = timetable.get("info", {})
 
         # 시간표 데이터 가공
         schedule = []
@@ -60,18 +60,34 @@ def get_timetable():
             start_time = entry.get("start_time", "")
             end_time = entry.get("end_time", "")
             location = entry.get("location", "")
+
+            # 빈 데이터 무시
+            if not class_name or not start_time or not end_time or not entry.get("class_days"):
+                continue
+
             for day in entry.get("class_days", []):
+                day_int = int(day.get("$numberInt", -1))
+                if day_int == -1:
+                    continue
                 schedule.append({
-                    "day": int(day),  # 숫자 변환
-                    "time": f"{start_time}-{end_time}",
-                    "class_name": f"{class_name} ({location})"
+                    "day": day_int,  # 요일 (숫자)
+                    "start_time": start_time,  # 시작 시간
+                    "end_time": end_time,  # 종료 시간
+                    "class_name": class_name,  # 강의명
+                    "location": location  # 장소
                 })
 
-        # print("DEBUG: Processed timetable:", schedule)  # 디버깅 출력
-        return jsonify({"status": "success", "timetable": schedule})
+        # JSON 응답
+        return jsonify({
+            "status": "success",
+            "user_info": user_info,
+            "timetable": {"schedule": schedule}
+        })
     except Exception as e:
-        print(f"ERROR: {str(e)}")  # 디버깅 출력
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
+
+
 
 @app.route('/get_friends', methods=['POST'])
 def get_friends():
