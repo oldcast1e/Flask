@@ -17,23 +17,22 @@
         <button type="submit">로그인</button>
     </form>
     <p id="responseMessage"></p>
+    <button onclick="window.location.href='SignUp.html'">회원가입</button>
+
     <script>
         const form = document.getElementById('loginForm');
         const responseMessage = document.getElementById('responseMessage');
 
         form.addEventListener('submit', async (e) => {
-            e.preventDefault(); // 기본 폼 제출 방지
+            e.preventDefault();
 
             const id = document.getElementById('id').value;
             const pw = document.getElementById('pw').value;
 
             try {
-                // 로컬 Flask 서버에 POST 요청 보내기
                 const response = await fetch('http://127.0.0.1:5001/login', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ id, pw }),
                 });
 
@@ -41,19 +40,14 @@
                 if (data.status === 'success') {
                     responseMessage.textContent = data.message;
                     responseMessage.style.color = 'green';
-
-                    // id와 name을 localStorage에 저장
                     localStorage.setItem('userId', data.id);
                     localStorage.setItem('userName', data.name);
-
-                    // complete.html로 이동
                     window.location.href = 'complete.html';
                 } else {
                     responseMessage.textContent = data.message;
                     responseMessage.style.color = 'red';
                 }
-            } 
-            catch (error) {
+            } catch (error) {
                 console.error('Error:', error);
                 responseMessage.textContent = '서버와 통신 중 오류가 발생했습니다.';
                 responseMessage.style.color = 'red';
