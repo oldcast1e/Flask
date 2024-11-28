@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Page</title>
+    <style>
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px solid black;
+            text-align: center;
+            padding: 8px;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .userinfo {
+            margin-bottom: 20px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>환영합니다!</h1>
+    <p id="userInfo"></p>
+    <button id="viewTimetable">시간표 보기</button>
+    <button id="viewFriends">친구 목록 보기</button>
+    <button id="viewCombine">시간표 합치기</button>
+    <br>
+
+    
+
+
+
+    <script>
+        // LocalStorage에서 사용자 정보 가져오기
+        const userId = localStorage.getItem('userId');
+        const userName = localStorage.getItem('userName');
+    
+        if (userId && userName) {
+            document.getElementById('userInfo').textContent = `ID: ${userId}, Name: ${userName}`;
+        } else {
+            document.getElementById('userInfo').textContent = '사용자 정보를 불러오는 데 실패했습니다.';
+            setTimeout(() => {
+                window.location.href = 'main.html';
+            }, 3000);
+        }
+    
+        // 시간표 보기 버튼 이벤트
+        document.getElementById('viewTimetable').addEventListener('click', () => {
+            if (userId) {
+                window.location.href = 'table.html';
+            } else {
+                alert('사용자 정보가 없습니다. 로그인 후 시도하세요.');
+            }
+        });
+
+        // 친구 목록 보기 버튼 이벤트
+        document.getElementById('viewFriends').addEventListener('click', () => {
+            if (userId) {
+                window.location.href = 'friends.html';
+            } else {
+                alert('사용자 정보가 없습니다. 로그인 후 시도하세요.');
+            }
+        });
+
+        // 시간표 합치기 버튼 이벤트
+        document.getElementById('viewCombine').addEventListener('click', () => {
+            if (userId) {
+                window.location.href = 'combine.html';
+            } else {
+                alert('사용자 정보가 없습니다. 로그인 후 시도하세요.');
+            }
+        });
+
+    </script>
+    
+</body>
+</html>

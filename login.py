@@ -46,11 +46,14 @@ def get_timetable():
     try:
         data = request.json
         user_id = data.get("id")
-
+        
+        # MongoDB 조회
         timetable = timetable_collection.find_one({"_id": user_id})
-
         if not timetable:
-            return jsonify({"status": "error", "message": "시간표를 찾을 수 없습니다."})
+            return jsonify({"status": "error", "message": f"시간표를 찾을 수 없습니다. ID: {user_id}"})
+
+        # Debugging: 반환된 데이터 출력
+        # print("DEBUG: Retrieved Timetable:", timetable)
 
         schedule = []
         for entry in timetable.get("schedule", []):
@@ -74,12 +77,16 @@ def get_timetable():
                     "location": location
                 })
 
+        # 최종 응답 JSON
         return jsonify({
             "status": "success",
             "timetable": {"schedule": schedule}
         })
     except Exception as e:
+        # 디버깅 메시지 출력
+        print(f"ERROR: {str(e)}")
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
 
 @app.route('/get_friends', methods=['POST'])
 def get_friends():
