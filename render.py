@@ -31,16 +31,14 @@ CLOVA_SECRET_KEY = os.environ.get("CLOVA_SECRET_KEY")
 openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 # 환경 변수 디버깅 출력
-print(f"[DEBUG] CLOVA_API_URL: {CLOVA_API_URL}")
-print(f"[DEBUG] CLOVA_SECRET_KEY: {CLOVA_SECRET_KEY}")
-print(f"[DEBUG] OPENAI_API_KEY: {openai.api_key}")
+# print(f"[DEBUG] CLOVA_API_URL: {CLOVA_API_URL}")
+# print(f"[DEBUG] CLOVA_SECRET_KEY: {CLOVA_SECRET_KEY}")
+# print(f"[DEBUG] OPENAI_API_KEY: {openai.api_key}")
 
 
 # 환경 변수 검증
 if not CLOVA_API_URL or not CLOVA_SECRET_KEY or not openai.api_key:
     raise ValueError("환경 변수가 설정되지 않았습니다. Render 대시보드에서 확인하세요.")
-
-
 
 
 @app.route('/upload-image', methods=['POST'])
@@ -79,27 +77,38 @@ def upload_image():
             print("[ERROR] 클로바 OCR 처리 실패.")
             return jsonify({"status": "error", "message": "OCR 처리 중 오류 발생."})
 
+        # JSON 기반 시간표 분석
+        analyzed_data = analyze_timetable_with_json(ocr_data)
+        if not analyzed_data:
+            print("[ERROR] JSON 데이터 분석 실패.")
+            return jsonify({"status": "error", "message": "JSON 데이터 분석 실패."})
+
         # OpenAI GPT API로 시간표 문서화
         ocr_text = extract_ocr_text(ocr_data)
         if not ocr_text:
             print("[ERROR] OCR 데이터에서 텍스트를 추출하지 못했습니다.")
             return jsonify({"status": "error", "message": "OCR 데이터에서 텍스트 추출 실패."})
 
+        # GPT API를 사용한 시간표 생성
         final_data = analyze_schedule_with_openai(ocr_text, student_name=user_name, student_id=user_id)
         if not final_data:
             print("[ERROR] OpenAI GPT API 처리 실패.")
             return jsonify({"status": "error", "message": "OpenAI API 처리 중 오류 발생."})
 
         # MongoDB에 데이터 저장
-        collection_timetable.replace_one({"_id": user_id}, final_data, upsert=True)
-        print("[INFO] 데이터가 MongoDB에 저장되었습니다.")
+        try:
+            result = collection_timetable.replace_one({"_id": user_id}, final_data, upsert=True)
+            # print("[INFO] 데이터가 MongoDB에 저장되었습니다. 저장 결과:", result.raw_result)
+        except Exception as db_error:
+            print("[ERROR] MongoDB 저장 중 오류:", str(db_error))
+            return jsonify({"status": "error", "message": "MongoDB 저장 실패."})
 
         # 성공 응답 반환
         return jsonify({"status": "success", "message": "업로드 및 분석 완료."})
 
     except Exception as e:
-        print(f"[ERROR] {e}")
-        return jsonify({"status": "error", "message": "서버 오류 발생."})
+        print(f"[ERROR] 서버 처리 중 오류 발생: {str(e)}")
+        return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
 
 
 def process_image(image_path):
@@ -118,7 +127,9 @@ def process_image(image_path):
 
 
 def extract_text_with_clova(file_path):
+    """클로바 OCR API를 사용해 텍스트 데이터를 추출하는 함수 (표 추출 기능 포함)."""
     try:
+        # 파일 열기 및 설정
         files = [('file', open(file_path, 'rb'))]
         headers = {'X-OCR-SECRET': CLOVA_SECRET_KEY}
         payload = {
@@ -126,49 +137,99 @@ def extract_text_with_clova(file_path):
                 'version': 'V2',
                 'requestId': str(uuid.uuid4()),
                 'timestamp': int(round(time.time() * 1000)),
-                'images': [{'format': 'jpg', 'name': os.path.basename(file_path)}]
+                'images': [{
+                    'format': os.path.splitext(file_path)[-1][1:],  # 파일 확장자를 동적으로 설정
+                    'name': os.path.basename(file_path),
+                    'type': 'table'  # 표 추출 타입 활성화
+                }]
             })
         }
+
+        # 클로바 OCR API 호출
         response = requests.post(CLOVA_API_URL, headers=headers, data=payload, files=files)
+
+        # 성공적인 응답일 경우 JSON 데이터 반환
         if response.status_code == 200:
             return response.json()
         else:
-            print(f"[ERROR] OCR API error: {response.status_code}")
+            print(f"[ERROR] 클로바 OCR API 응답 오류. 상태 코드: {response.status_code}")
             return None
     except Exception as e:
-        print(f"[ERROR] OCR 호출 중 오류 발생: {e}")
+        print(f"[ERROR] 클로바 OCR 호출 오류: {str(e)}")
         return None
 
 
 def extract_ocr_text(ocr_data):
+    """OCR 데이터에서 텍스트를 추출하는 함수."""
     try:
-        if "images" not in ocr_data:
-            print("[ERROR] OCR JSON에 'images' 필드가 없습니다.")
+        if not ocr_data.get('images') or not isinstance(ocr_data['images'], list):
+            print("[ERROR] OCR 데이터에서 'images' 키가 없거나 유효하지 않습니다. 공백 데이터로 처리합니다.")
             return ""
-
+        
+        image_data = ocr_data['images'][0]
+        fields = image_data.get('fields', [])
+        if not fields:
+            print("[ERROR] OCR 데이터에서 'fields' 키가 없거나 데이터가 비어 있습니다. 공백 데이터로 처리합니다.")
+            return ""
+        
         extracted_texts = []
-        for image in ocr_data.get("images", []):
-            if "fields" in image:
-                for field in image["fields"]:
-                    extracted_texts.append(field.get("inferText", ""))
+        for field in fields:
+            if "inferText" in field:
+                extracted_texts.append(field["inferText"])
+        
+        if not extracted_texts:
+            print("[ERROR] OCR 데이터에서 텍스트를 추출할 수 없습니다. 공백 데이터로 처리합니다.")
+            return ""
+        
         return " ".join(extracted_texts)
+
     except Exception as e:
-        print(f"[ERROR] OCR 텍스트 추출 중 오류 발생: {e}")
+        print(f"[ERROR] OCR 텍스트 추출 중 예기치 못한 오류 발생: {str(e)}")
         return ""
 
 
 def analyze_schedule_with_openai(ocr_text, student_name, student_id):
     prompt = f"""
-    Analyze the following OCR data and organize it as a class schedule. Each schedule entry should contain:
-    - class_name: Class name (without spaces),
-    - class_days: List of integers (1 for Monday to 5 for Friday),
-    - start_time: Start time (formatted as HH:MM, 24-hour time),
-    - end_time: End time (formatted as HH:MM, 24-hour time),
-    - location: Location (classroom or hall).
+    Analyze the following OCR data and organize it into a class schedule in JSON format. Adhere to these precise instructions:
 
-    Ensure the output is a valid JSON array containing the entries.
-    OCR data: {ocr_text}
+    1. **Separate each class into distinct entries**:
+    - Each class must be represented as a unique entry in the schedule.
+    - If multiple class names appear on the same line or across adjacent lines, create separate entries for each.
+    - Remove irrelevant suffixes or words such as "스터디", "연구", or "과제" unless they are integral to the class name.
+
+    2. **Handle incomplete or ambiguous data**:
+    - For class names that appear fragmented or merged with other text, infer the correct name based on layout, context, or spacing.
+    - If fields like class days, times, or locations are missing, leave those fields empty (e.g., `[]` for `class_days`, or empty strings for time and location).
+
+    3. **Extract and structure the following fields**:
+    - `"class_name"`: The exact class name in Korean, cleaned of unnecessary text.
+    - `"class_days"`: Represent class days numerically (1 = Monday, ..., 5 = Friday). Leave as an empty list `[]` if not specified.
+    - `"start_time"` and `"end_time"`: Times must follow the `hh:mm` 24-hour format, rounded to the nearest 30 minutes (e.g., 13:45 → 13:30, 13:55 → 14:00). Leave as an empty string `""` if missing.
+    - `"location"`: Use the location provided in the OCR data. If no location is specified, use `"Unknown"`.
+
+    4. **Resolve inconsistencies in time and format**:
+    - Ensure start times are earlier than end times. If the data is unclear, infer logical time ranges based on context (e.g., morning or afternoon).
+    - Verify all numeric values, such as days and times, are correctly parsed from the OCR data.
+
+    5. **Preserve data integrity**:
+    - Do not assume or add data beyond what is available in the OCR text.
+    - Ensure the JSON strictly follows the format below, with each class entry as a separate object:
+
+        {{
+            "class_name": "Exact Class Name in Korean",
+            "class_days": [1, 3, 5],
+            "start_time": "09:30",
+            "end_time": "10:30",
+            "location": "Classroom A"
+        }}
+
+    6. **Output considerations**:
+    - If the OCR data contains irrelevant text or non-class-related entries, exclude them from the final schedule.
+    - For incomplete data, structure the entry with the available information, leaving missing fields empty.
+
+    Here is the OCR data extracted from the timetable image: {ocr_text}
     """
+    
     try:
         # OpenAI ChatCompletion 호출
         response = openai.ChatCompletion.create(
