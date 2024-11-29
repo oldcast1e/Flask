@@ -22,7 +22,8 @@ document.addEventListener("DOMContentLoaded", function () {
     async function loadTimetable() {
         loadingMessage.style.display = "block";
         try {
-            const response = await fetch("http://127.0.0.1:5001/get_timetable", {
+            // const response = await fetch("http://127.0.0.1:5001/get_timetable", {
+            const response = await fetch("https://login-juko.onrender.com/get_timetable", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
