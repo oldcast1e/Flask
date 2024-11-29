@@ -41,6 +41,8 @@ if not CLOVA_API_URL or not CLOVA_SECRET_KEY or not openai.api_key:
     raise ValueError("환경 변수가 설정되지 않았습니다. Render 대시보드에서 확인하세요.")
 
 
+
+
 @app.route('/upload-image', methods=['POST'])
 def upload_image():
     try:
