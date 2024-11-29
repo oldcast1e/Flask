@@ -50,22 +50,24 @@ def upload_image():
         print(f"[DEBUG] userId: {user_id}, userName: {user_name}")
 
         if not user_id or not user_name:
+            print("[ERROR] 사용자 정보가 누락되었습니다.")
             return jsonify({"status": "error", "message": "사용자 정보가 누락되었습니다."})
 
         # 사용자 정보 확인
         user = collection_user.find_one({"_id": user_id})
         if not user:
+            print("[ERROR] 사용자 정보가 존재하지 않습니다.")
             return jsonify({"status": "error", "message": "사용자 정보가 존재하지 않습니다."})
 
         # 이미지 파일 처리
         if "image" not in request.files:
-            print("[DEBUG] 이미지 파일이 요청에 포함되지 않았습니다.")
+            print("[ERROR] 이미지 파일이 요청에 포함되지 않았습니다.")
             return jsonify({"status": "error", "message": "이미지 파일이 필요합니다."})
+
         file = request.files["image"]
-        print(f"[DEBUG] 업로드된 파일: {file.filename}")
         file_path = f"/tmp/{uuid.uuid4()}.png"
         file.save(file_path)
-        print(f"[DEBUG] 파일이 저장된 경로: {file_path}")
+        print(f"[DEBUG] 업로드된 파일이 저장되었습니다: {file_path}")
 
         # 이미지 전처리
         processed_image_path = process_image(file_path)
@@ -97,18 +99,21 @@ def upload_image():
 
         # MongoDB에 데이터 저장
         try:
+            # print("[DEBUG] MongoDB 저장 전 데이터:", json.dumps(final_data, indent=2, ensure_ascii=False))
             result = collection_timetable.replace_one({"_id": user_id}, final_data, upsert=True)
-            # print("[INFO] 데이터가 MongoDB에 저장되었습니다. 저장 결과:", result.raw_result)
+            # print("[INFO] MongoDB 저장 성공. 결과:", result.raw_result)
         except Exception as db_error:
-            print("[ERROR] MongoDB 저장 중 오류:", str(db_error))
+            print(f"[ERROR] MongoDB 저장 중 오류: {db_error}")
             return jsonify({"status": "error", "message": "MongoDB 저장 실패."})
 
         # 성공 응답 반환
+        print("[INFO] 업로드 및 분석 성공.")
         return jsonify({"status": "success", "message": "업로드 및 분석 완료."})
 
     except Exception as e:
-        print(f"[ERROR] 서버 처리 중 오류 발생: {str(e)}")
+        print(f"[ERROR] 서버 처리 중 오류 발생: {e}")
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
 
 
 def process_image(image_path):
