@@ -1,15 +1,21 @@
 import os
+import time
 import json
 import uuid
+import numpy as np
+import cv2
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
+import openai
+import re
 
 # Flask 설정
 app = Flask(__name__)
 CORS(app)
 
-# MongoDB 설정
+# MongoDB 클라이언트 설정
 client = MongoClient(
     "mongodb+srv://kylhs0705:smtI18Nl4WqtRUXX@team-click.s8hg5.mongodb.net/?retryWrites=true&w=majority&appName=Team-Click",
     tls=True,
@@ -17,162 +23,307 @@ client = MongoClient(
 )
 db = client.OurTime
 collection_timetable = db.timetable
+collection_user = db.User
+
+# API 키 로드 함수
+def load_api_key(file_path):
+    with open(file_path, "r") as file:
+        return file.read().strip()
+
+# API 키 로드
+BASE_DIR = os.path.dirname(__file__)
+CLOVA_API_URL = load_api_key(os.path.join(BASE_DIR, "key", "CLOVA_API_URL.txt"))
+CLOVA_SECRET_KEY = load_api_key(os.path.join(BASE_DIR, "key", "CLOVA_SECRET_KEY.txt"))
+openai.api_key = load_api_key(os.path.join(BASE_DIR, "key", "openai_api_key.txt"))
 
 
-def extract_schedule_from_json(ocr_json):
-    """
-    JSON 데이터에서 시간표를 추출하여 MongoDB 형식에 맞게 변환합니다.
-    """
+@app.route('/upload-image', methods=['POST'])
+def upload_image():
     try:
-        tables = ocr_json.get("images", [])[0].get("tables", [])
-        day_mapping = {"월": 1, "화": 2, "수": 3, "목": 4, "금": 5}
-        schedule = []
-
-        for table in tables:
-            for cell in table.get("cells", []):
-                row_index = cell.get("rowIndex", -1)
-                col_index = cell.get("columnIndex", -1)
-                cell_text_lines = cell.get("cellTextLines", [])
-                cell_text = " ".join(
-                    word["inferText"].strip() for line in cell_text_lines for word in line.get("cellWords", [])
-                ).strip()
-
-                # 요일 확인
-                if row_index == 0 and cell_text in day_mapping:
-                    current_day = day_mapping[cell_text]
-
-                # 시간 확인
-                elif col_index == 0 and cell_text.isdigit():
-                    current_time = cell_text
-
-                # 강의 정보 확인
-                elif cell_text:
-                    schedule_entry = {
-                        "class_name": cell_text,
-                        "class_days": [{"$numberInt": str(current_day)}],
-                        "start_time": f"{current_time}:00",
-                        "end_time": f"{int(current_time) + 1}:00",
-                        "location": "Unknown"  # 기본 위치는 Unknown
-                    }
-                    schedule.append(schedule_entry)
-
-        return schedule
-
-    except Exception as e:
-        print(f"[ERROR] 시간표 추출 중 오류 발생: {e}")
-        return []
-
-@app.route('/login', methods=['POST'])
-def login():
-    try:
-        data = request.json
-        user_id = data.get("id")
-        user_pw = data.get("pw")
-
-        # 기존 user_collection 대신 collection_user 사용
-        user = collection_user.find_one({"_id": user_id})
-
-        if not user:
-            return jsonify({"status": "error", "message": "아이디가 올바르지 않습니다."})
-        elif user["info"]["pw"] != user_pw:
-            return jsonify({"status": "error", "message": "비밀번호를 확인해주세요."})
-        else:
-            return jsonify({
-                "status": "success",
-                "message": f"로그인 성공. 환영합니다, {user['info']['name']}님!",
-                "id": user_id,
-                "name": user["info"]["name"]
-            })
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
-
-@app.route('/get_timetable', methods=['POST'])
-def get_timetable():
-    try:
-        data = request.json
-        user_id = data.get("id")
-
-        # timetable_collection을 collection_timetable로 수정
-        timetable = collection_timetable.find_one({"_id": user_id})
-
-        if not timetable:
-            return jsonify({"status": "error", "message": "시간표를 찾을 수 없습니다."})
-
-        # 사용자 정보
-        user_info = timetable.get("info", {})
-
-        # 시간표 데이터 가공
-        schedule = []
-        for entry in timetable.get("schedule", []):
-            class_name = entry.get("class_name", "")
-            start_time = entry.get("start_time", "")
-            end_time = entry.get("end_time", "")
-            location = entry.get("location", "")
-
-            # 빈 데이터 무시
-            if not class_name or not start_time or not end_time or not entry.get("class_days"):
-                continue
-
-            for day in entry.get("class_days", []):
-                day_int = int(day.get("$numberInt", -1))
-                if day_int == -1:
-                    continue
-                schedule.append({
-                    "day": day_int,  # 요일 (숫자)
-                    "start_time": start_time,  # 시작 시간
-                    "end_time": end_time,  # 종료 시간
-                    "class_name": class_name,  # 강의명
-                    "location": location  # 장소
-                })
-
-        # JSON 응답
-        return jsonify({
-            "status": "success",
-            "user_info": user_info,
-            "timetable": {"schedule": schedule}
-        })
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
-
-@app.route('/upload-timetable', methods=['POST'])
-def upload_timetable():
-    """
-    클라이언트에서 업로드된 JSON 파일을 분석하고 시간표 데이터를 MongoDB에 저장합니다.
-    """
-    try:
-        # 사용자 정보 확인
+        # 사용자 정보 가져오기
         user_id = request.form.get("userId")
         user_name = request.form.get("userName")
+        print(f"[DEBUG] userId: {user_id}, userName: {user_name}")
 
         if not user_id or not user_name:
             return jsonify({"status": "error", "message": "사용자 정보가 누락되었습니다."})
 
-        # JSON 파일 처리
-        file = request.files.get("ocr_json")
-        if not file:
-            return jsonify({"status": "error", "message": "OCR JSON 파일이 필요합니다."})
+        # 사용자 정보 확인
+        user = collection_user.find_one({"_id": user_id})
+        if not user:
+            return jsonify({"status": "error", "message": "사용자 정보가 존재하지 않습니다."})
 
-        ocr_json = json.load(file)
+        # 이미지 파일 처리
+        if "image" not in request.files:
+            print("[DEBUG] 이미지 파일이 요청에 포함되지 않았습니다.")
+            return jsonify({"status": "error", "message": "이미지 파일이 필요합니다."})
+        file = request.files["image"]
+        print(f"[DEBUG] 업로드된 파일: {file.filename}")
+        file_path = f"/tmp/{uuid.uuid4()}.png"
+        file.save(file_path)
+        print(f"[DEBUG] 파일이 저장된 경로: {file_path}")
 
-        # 시간표 추출
-        schedule = extract_schedule_from_json(ocr_json)
-        if not schedule:
-            return jsonify({"status": "error", "message": "시간표 데이터 추출 실패."})
+        # 이미지 전처리
+        processed_image_path = process_image(file_path)
+        print(f"[DEBUG] 전처리된 이미지 경로: {processed_image_path}")
 
-        # MongoDB 저장 형식으로 데이터 구성
-        timetable_data = {
-            "_id": user_id,
-            "info": {"name": user_name, "number": user_id},
-            "schedule": schedule
-        }
+        # 클로바 OCR 처리
+        ocr_data = extract_text_with_clova(processed_image_path)
+        if not ocr_data:
+            print("[ERROR] 클로바 OCR 처리 실패.")
+            return jsonify({"status": "error", "message": "OCR 처리 중 오류 발생."})
 
-        # MongoDB에 저장
-        collection_timetable.replace_one({"_id": user_id}, timetable_data, upsert=True)
-        return jsonify({"status": "success", "message": "시간표 저장 완료.", "timetable": timetable_data})
+        # JSON 기반 시간표 분석
+        analyzed_data = analyze_timetable_with_json(ocr_data)
+        if not analyzed_data:
+            print("[ERROR] JSON 데이터 분석 실패.")
+            return jsonify({"status": "error", "message": "JSON 데이터 분석 실패."})
+
+        # OpenAI GPT API로 시간표 문서화
+        ocr_text = extract_ocr_text(ocr_data)
+        if not ocr_text:
+            print("[ERROR] OCR 데이터에서 텍스트를 추출하지 못했습니다.")
+            return jsonify({"status": "error", "message": "OCR 데이터에서 텍스트 추출 실패."})
+
+        # GPT API를 사용한 시간표 생성
+        final_data = analyze_schedule_with_openai(ocr_text, student_name=user_name, student_id=user_id)
+        if not final_data:
+            print("[ERROR] OpenAI GPT API 처리 실패.")
+            return jsonify({"status": "error", "message": "OpenAI API 처리 중 오류 발생."})
+
+        # MongoDB에 데이터 저장
+        try:
+            result = collection_timetable.replace_one({"_id": user_id}, final_data, upsert=True)
+            # print("[INFO] 데이터가 MongoDB에 저장되었습니다. 저장 결과:", result.raw_result)
+        except Exception as db_error:
+            print("[ERROR] MongoDB 저장 중 오류:", str(db_error))
+            return jsonify({"status": "error", "message": "MongoDB 저장 실패."})
+
+        # 성공 응답 반환
+        return jsonify({"status": "success", "message": "업로드 및 분석 완료."})
 
     except Exception as e:
-        print(f"[ERROR] {e}")
+        print(f"[ERROR] 서버 처리 중 오류 발생: {str(e)}")
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
+
+
+def process_image(image_path):
+    """이미지를 전처리하여 OCR 인식률을 높이는 함수."""
+    output_path = f"/tmp/{uuid.uuid4()}_processed.png"
+    image = cv2.imread(image_path)
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray_image, threshold1=1, threshold2=50)
+    kernel = np.ones((3, 3), np.uint8)
+    thick_edges = cv2.dilate(edges, kernel, iterations=1)
+    gray_image_with_edges = gray_image.copy()
+    gray_image_with_edges[edges == 255] = 0
+    inverted_image = np.where(gray_image_with_edges == 0, 255, 0).astype(np.uint8)
+    re_inverted_image = cv2.bitwise_not(inverted_image)
+    cv2.imwrite(output_path, re_inverted_image)
+    return output_path
+
+
+def extract_text_with_clova(file_path):
+    """클로바 OCR API를 사용해 텍스트 데이터를 추출하는 함수."""
+    try:
+        files = [('file', open(file_path, 'rb'))]
+        headers = {'X-OCR-SECRET': CLOVA_SECRET_KEY}
+        payload = {
+            'message': json.dumps({
+                'version': 'V2',
+                'requestId': str(uuid.uuid4()),
+                'timestamp': int(round(time.time() * 1000)),
+                'images': [{'format': 'jpg', 'name': os.path.basename(file_path)}]
+            })
+        }
+        response = requests.post(CLOVA_API_URL, headers=headers, data=payload, files=files)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except Exception as e:
+        print(f"[ERROR] 클로바 OCR 호출 오류: {str(e)}")
+        return None
+
+
+def analyze_timetable_with_json(ocr_data):
+    """클로바 OCR JSON 데이터를 기반으로 시간표를 분석하는 함수."""
+    try:
+        # 'images' 키와 'tables' 키 검증
+        if not ocr_data.get('images') or not isinstance(ocr_data['images'], list):
+            print("[ERROR] 'images' 키가 없거나 유효하지 않습니다. 공백 데이터로 처리합니다.")
+            return [{"row": -1, "column": -1, "text": ""}]
+        
+        image_data = ocr_data['images'][0]
+        if not image_data.get('tables') or not isinstance(image_data['tables'], list) or not image_data['tables']:
+            print("[ERROR] 'tables' 키가 존재하지 않거나 데이터가 비어 있습니다. 공백 데이터로 처리합니다.")
+            return [{"row": -1, "column": -1, "text": ""}]
+        
+        # 'tables' 데이터 분석
+        tables = image_data['tables'][0].get('cells', [])
+        if not tables:
+            print("[ERROR] 'tables'의 'cells' 데이터가 비어 있습니다. 공백 데이터로 처리합니다.")
+            return [{"row": -1, "column": -1, "text": ""}]
+
+        schedule_data = []
+        for cell in tables:
+            # 빈 셀 건너뛰기
+            if not cell.get('cellTextLines'):
+                print("[DEBUG] 빈 셀 데이터를 건너뜁니다.")
+                continue
+
+            cell_text = []
+            for line in cell['cellTextLines']:
+                line_text = " ".join(word["inferText"] for word in line.get("cellWords", []) if "inferText" in word)
+                if line_text.strip():  # 공백만 있는 텍스트는 무시
+                    cell_text.append(line_text)
+            
+            if not cell_text:  # 셀 텍스트가 비어 있으면 건너뜀
+                print("[DEBUG] 유효한 텍스트가 없는 셀을 건너뜁니다.")
+                continue
+            
+            schedule_data.append({
+                "row": cell.get("rowIndex", -1),  # 기본값 -1로 설정
+                "column": cell.get("columnIndex", -1),  # 기본값 -1로 설정
+                "text": " ".join(cell_text).strip()
+            })
+
+        if not schedule_data:
+            print("[ERROR] 유효한 데이터가 없는 'tables'입니다. 공백 데이터로 처리합니다.")
+            return [{"row": -1, "column": -1, "text": ""}]
+
+        print("[INFO] 'tables' 데이터 분석 완료.")
+        return schedule_data
+
+    except KeyError as e:
+        print(f"[ERROR] JSON 데이터 분석 중 KeyError 발생: {str(e)}. 공백 데이터로 처리합니다.")
+        return [{"row": -1, "column": -1, "text": ""}]
+    except Exception as e:
+        print(f"[ERROR] JSON 데이터 분석 중 예기치 못한 오류 발생: {str(e)}. 공백 데이터로 처리합니다.")
+        return [{"row": -1, "column": -1, "text": ""}]
+
+
+
+
+def analyze_schedule_with_openai(ocr_text, student_name, student_id):
+    prompt = f"""
+    Analyze the following OCR data and organize it into a class schedule in JSON format. Adhere to these precise instructions:
+
+    1. **Separate each class into distinct entries**:
+    - Each class must be represented as a unique entry in the schedule.
+    - If multiple class names appear on the same line or across adjacent lines, create separate entries for each.
+    - Remove irrelevant suffixes or words such as "스터디", "연구", or "과제" unless they are integral to the class name.
+
+    2. **Handle incomplete or ambiguous data**:
+    - For class names that appear fragmented or merged with other text, infer the correct name based on layout, context, or spacing.
+    - If fields like class days, times, or locations are missing, leave those fields empty (e.g., `[]` for `class_days`, or empty strings for time and location).
+
+    3. **Extract and structure the following fields**:
+    - `"class_name"`: The exact class name in Korean, cleaned of unnecessary text.
+    - `"class_days"`: Represent class days numerically (1 = Monday, ..., 5 = Friday). Leave as an empty list `[]` if not specified.
+    - `"start_time"` and `"end_time"`: Times must follow the `hh:mm` 24-hour format, rounded to the nearest 30 minutes (e.g., 13:45 → 13:30, 13:55 → 14:00). Leave as an empty string `""` if missing.
+    - `"location"`: Use the location provided in the OCR data. If no location is specified, use `"Unknown"`.
+
+    4. **Resolve inconsistencies in time and format**:
+    - Ensure start times are earlier than end times. If the data is unclear, infer logical time ranges based on context (e.g., morning or afternoon).
+    - Verify all numeric values, such as days and times, are correctly parsed from the OCR data.
+
+    5. **Preserve data integrity**:
+    - Do not assume or add data beyond what is available in the OCR text.
+    - Ensure the JSON strictly follows the format below, with each class entry as a separate object:
+
+        {{
+            "class_name": "Exact Class Name in Korean",
+            "class_days": [1, 3, 5],
+            "start_time": "09:30",
+            "end_time": "10:30",
+            "location": "Classroom A"
+        }}
+
+    6. **Output considerations**:
+    - If the OCR data contains irrelevant text or non-class-related entries, exclude them from the final schedule.
+    - For incomplete data, structure the entry with the available information, leaving missing fields empty.
+
+    Here is the OCR data extracted from the timetable image: {ocr_text}
+    """
+    
+    try:
+        # OpenAI ChatCompletion 호출
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert in OCR data processing and JSON structuring."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1500,
+            temperature=0.2,
+        )
+        response_text = response.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+
+        if not response_text:
+            return None
+
+        # JSON 응답 추출
+        json_match = re.search(r'\{.*\}|\[.*\]', response_text, re.DOTALL)
+        if json_match:
+            response_text = json_match.group(0)
+        else:
+            print("[ERROR] OpenAI 응답에서 JSON 데이터를 찾을 수 없습니다.")
+            return None
+
+        # JSON 데이터 로드
+        schedule_data = json.loads(response_text)
+
+        # 데이터 형식 변환
+        formatted_schedule = []
+        for entry in schedule_data:
+            formatted_entry = {
+                "class_name": entry.get("class_name", "").strip(),
+                "class_days": [{"$numberInt": str(day)} for day in entry.get("class_days", [])],
+                "start_time": entry.get("start_time", "").strip(),
+                "end_time": entry.get("end_time", "").strip(),
+                "location": entry.get("location", "").strip()
+            }
+            formatted_schedule.append(formatted_entry)
+
+        # 최종 데이터 반환
+        return {
+            "_id": student_id,
+            "info": {"name": student_name, "number": student_id},
+            "schedule": formatted_schedule
+        }
+    except Exception as e:
+        print(f"[ERROR] OpenAI API 호출 오류: {e}")
+        return None
+
+def extract_ocr_text(ocr_data):
+    """OCR 데이터에서 텍스트를 추출하는 함수."""
+    try:
+        if not ocr_data.get('images') or not isinstance(ocr_data['images'], list):
+            print("[ERROR] OCR 데이터에서 'images' 키가 없거나 유효하지 않습니다. 공백 데이터로 처리합니다.")
+            return ""
+        
+        image_data = ocr_data['images'][0]
+        fields = image_data.get('fields', [])
+        if not fields:
+            print("[ERROR] OCR 데이터에서 'fields' 키가 없거나 데이터가 비어 있습니다. 공백 데이터로 처리합니다.")
+            return ""
+        
+        extracted_texts = []
+        for field in fields:
+            if "inferText" in field:
+                extracted_texts.append(field["inferText"])
+        
+        if not extracted_texts:
+            print("[ERROR] OCR 데이터에서 텍스트를 추출할 수 없습니다. 공백 데이터로 처리합니다.")
+            return ""
+        
+        return " ".join(extracted_texts)
+
+    except Exception as e:
+        print(f"[ERROR] OCR 텍스트 추출 중 예기치 못한 오류 발생: {str(e)}")
+        return ""
 
 
 if __name__ == "__main__":
