@@ -284,6 +284,61 @@ def analyze_schedule_with_openai(ocr_text, student_name, student_id):
         print(f"[ERROR] OpenAI API 호출 오류: {e}")
         return None
 
+def analyze_timetable_with_json(ocr_data):
+    """클로바 OCR JSON 데이터를 기반으로 시간표를 분석하는 함수."""
+    try:
+        # 'images' 키와 'tables' 키 검증
+        if not ocr_data.get('images') or not isinstance(ocr_data['images'], list):
+            print("[ERROR] 'images' 키가 없거나 유효하지 않습니다. 공백 데이터로 처리합니다.")
+            return [{"row": -1, "column": -1, "text": ""}]
+        
+        image_data = ocr_data['images'][0]
+        if not image_data.get('tables') or not isinstance(image_data['tables'], list) or not image_data['tables']:
+            print("[ERROR] 'tables' 키가 존재하지 않거나 데이터가 비어 있습니다. 공백 데이터로 처리합니다.")
+            return [{"row": -1, "column": -1, "text": ""}]
+        
+        # 'tables' 데이터 분석
+        tables = image_data['tables'][0].get('cells', [])
+        if not tables:
+            print("[ERROR] 'tables'의 'cells' 데이터가 비어 있습니다. 공백 데이터로 처리합니다.")
+            return [{"row": -1, "column": -1, "text": ""}]
+
+        schedule_data = []
+        for cell in tables:
+            # 빈 셀 건너뛰기
+            if not cell.get('cellTextLines'):
+                print("[DEBUG] 빈 셀 데이터를 건너뜁니다.")
+                continue
+
+            cell_text = []
+            for line in cell['cellTextLines']:
+                line_text = " ".join(word["inferText"] for word in line.get("cellWords", []) if "inferText" in word)
+                if line_text.strip():  # 공백만 있는 텍스트는 무시
+                    cell_text.append(line_text)
+            
+            if not cell_text:  # 셀 텍스트가 비어 있으면 건너뜀
+                print("[DEBUG] 유효한 텍스트가 없는 셀을 건너뜁니다.")
+                continue
+            
+            schedule_data.append({
+                "row": cell.get("rowIndex", -1),  # 기본값 -1로 설정
+                "column": cell.get("columnIndex", -1),  # 기본값 -1로 설정
+                "text": " ".join(cell_text).strip()
+            })
+
+        if not schedule_data:
+            print("[ERROR] 유효한 데이터가 없는 'tables'입니다. 공백 데이터로 처리합니다.")
+            return [{"row": -1, "column": -1, "text": ""}]
+
+        print("[INFO] 'tables' 데이터 분석 완료.")
+        return schedule_data
+
+    except KeyError as e:
+        print(f"[ERROR] JSON 데이터 분석 중 KeyError 발생: {str(e)}. 공백 데이터로 처리합니다.")
+        return [{"row": -1, "column": -1, "text": ""}]
+    except Exception as e:
+        print(f"[ERROR] JSON 데이터 분석 중 예기치 못한 오류 발생: {str(e)}. 공백 데이터로 처리합니다.")
+        return [{"row": -1, "column": -1, "text": ""}]
 
 
 if __name__ == "__main__":
