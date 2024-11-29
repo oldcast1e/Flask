@@ -125,8 +125,9 @@ def process_image(image_path):
 
 
 def extract_text_with_clova(file_path):
-    """클로바 OCR API를 사용해 텍스트 데이터를 추출하는 함수."""
+    """클로바 OCR API를 사용해 텍스트 데이터를 추출하는 함수 (표 추출 기능 포함)."""
     try:
+        # 파일 열기 및 설정
         files = [('file', open(file_path, 'rb'))]
         headers = {'X-OCR-SECRET': CLOVA_SECRET_KEY}
         payload = {
@@ -134,17 +135,27 @@ def extract_text_with_clova(file_path):
                 'version': 'V2',
                 'requestId': str(uuid.uuid4()),
                 'timestamp': int(round(time.time() * 1000)),
-                'images': [{'format': 'jpg', 'name': os.path.basename(file_path)}]
+                'images': [{
+                    'format': os.path.splitext(file_path)[-1][1:],  # 파일 확장자를 동적으로 설정
+                    'name': os.path.basename(file_path),
+                    'type': 'table'  # 표 추출 타입 활성화
+                }]
             })
         }
+
+        # 클로바 OCR API 호출
         response = requests.post(CLOVA_API_URL, headers=headers, data=payload, files=files)
+
+        # 성공적인 응답일 경우 JSON 데이터 반환
         if response.status_code == 200:
             return response.json()
         else:
+            print(f"[ERROR] 클로바 OCR API 응답 오류. 상태 코드: {response.status_code}")
             return None
     except Exception as e:
         print(f"[ERROR] 클로바 OCR 호출 오류: {str(e)}")
         return None
+
 
 
 def analyze_timetable_with_json(ocr_data):
