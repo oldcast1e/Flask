@@ -111,7 +111,7 @@ def get_timetable():
     except Exception as e:
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
 
-
+#지피티 로직 제거
 @app.route('/upload-image', methods=['POST'])
 def upload_image():
     try:
@@ -138,26 +138,40 @@ def upload_image():
         if not extracted_schedule:
             return jsonify({"status": "error", "message": "시간표 데이터를 추출할 수 없습니다."})
 
-        # MongoDB에 저장 형식으로 데이터 변환
-        raw_data = {
+        # MongoDB 양식에 맞춰 데이터 변환
+        formatted_schedule = []
+        day_mapping = {"월": 1, "화": 2, "수": 3, "목": 4, "금": 5}
+
+        for entry in extracted_schedule:
+            formatted_schedule.append({
+                "class_name": entry["class_name"],
+                "class_days": [{"$numberInt": str(day)} for day in entry["class_days"]],
+                "start_time": entry["start_time"],
+                "end_time": entry["end_time"],
+                "location": entry.get("location", "Unknown")
+            })
+
+        # MongoDB 저장 형식으로 데이터 구성
+        db_data = {
             "_id": user_id,
             "info": {"name": user_name, "number": user_id},
-            "schedule": extracted_schedule
+            "schedule": formatted_schedule
         }
 
         # MongoDB에 저장 또는 갱신
-        collection_timetable.replace_one({"_id": user_id}, raw_data, upsert=True)
+        collection_timetable.replace_one({"_id": user_id}, db_data, upsert=True)
         print("[INFO] 데이터가 MongoDB에 저장되었습니다.")
 
         return jsonify({
             "status": "success",
             "message": "시간표 업로드 및 저장 완료.",
-            "timetable": extracted_schedule
+            "timetable": db_data["schedule"]
         })
 
     except Exception as e:
         print(f"[ERROR] {e}")
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
 
 
 

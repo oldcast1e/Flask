@@ -39,6 +39,22 @@ def login():
     except Exception as e:
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
 
+@app.route('/register', methods=['POST'])
+def register():
+    try:
+        data = request.json
+        user_id = data['_id']
+        info = data['info']
+
+        if user_collection.find_one({"_id": user_id}):
+            return jsonify({"success": False, "message": "이미 존재하는 사용자입니다."})
+
+        user_collection.insert_one({"_id": user_id, "info": info})
+        friend_collection.insert_one({"_id": user_id, "info": info, "friends":[]})
+        return jsonify({"success": True, "message": "회원가입 성공"})
+    except Exception as e:
+        return jsonify({"success": False, "message": f"오류 발생: {str(e)}"})
+
 @app.route('/get_timetable', methods=['POST'])
 def get_timetable():
     try:
@@ -86,9 +102,6 @@ def get_timetable():
     except Exception as e:
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
 
-
-
-
 @app.route('/get_friends', methods=['POST'])
 def get_friends():
     try:
@@ -108,6 +121,87 @@ def get_friends():
     except Exception as e:
         print(f"ERROR: {str(e)}")  # 디버깅 출력
         return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
+@app.route('/add_friend', methods=['POST'])
+def add_friend():
+    try:
+        data = request.json
+        user_id = data.get("user_id")
+        friend_id = data.get("friend_id")
+        friend_name = data.get("friend_name")
+
+        # 입력값 검증
+        if not user_id or not friend_id or not friend_name:
+            return jsonify({"status": "error", "message": "모든 필드를 입력해주세요."})
+
+        # 사용자 확인
+        user = friend_collection.find_one({"_id": user_id})
+        if not user:
+            return jsonify({"status": "error", "message": "사용자를 찾을 수 없습니다."})
+
+        # 친구 확인
+        friend = user_collection.find_one({"_id": friend_id})
+        if not friend:
+            return jsonify({"status": "error", "message": "존재하지 않는 친구 ID입니다."})
+
+        # 이미 친구인지 확인
+        if any(f["friend_id"] == friend_id for f in user.get("friends", [])):
+            return jsonify({"status": "error", "message": "이미 친구로 추가된 사용자입니다."})
+
+        # 친구 추가
+        friend_entry = {
+            "friend_id": friend_id,
+            "friend_name": friend_name
+        }
+        friend_collection.update_one(
+            {"_id": user_id},
+            {"$push": {"friends": friend_entry}}
+        )
+
+        return jsonify({"status": "success", "message": f"{friend_name}님이 친구로 추가되었습니다."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
+@app.route('/check_user', methods=['POST'])
+def check_user():
+    try:
+        data = request.json
+        user_id = data.get("id")
+
+        if not user_id:
+            return jsonify({"status": "error", "message": "사용자 ID가 제공되지 않았습니다."})
+
+        # User 클러스터에서 사용자 확인
+        user = user_collection.find_one({"_id": user_id})
+        if not user:
+            return jsonify({"status": "error", "message": "존재하지 않는 사용자입니다."})
+
+        return jsonify({"status": "success", "message": "사용자가 존재합니다."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
+@app.route('/remove_friend', methods=['POST'])
+def remove_friend():
+    try:
+        data = request.json
+        user_id = data.get("user_id")
+        friend_id = data.get("friend_id")
+
+        if not user_id or not friend_id:
+            return jsonify({"status": "error", "message": "필수 정보가 누락되었습니다."})
+
+        result = friend_collection.update_one(
+            {"_id": user_id},
+            {"$pull": {"friends": {"friend_id": friend_id}}}
+        )
+
+        if result.modified_count == 0:
+            return jsonify({"status": "error", "message": "친구 목록에서 삭제되지 않았습니다."})
+
+        return jsonify({"status": "success", "message": "친구가 성공적으로 삭제되었습니다."})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"서버 오류 발생: {str(e)}"})
+
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5001, debug=True)
