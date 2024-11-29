@@ -217,6 +217,10 @@ def analyze_schedule_with_openai(ocr_text, student_name, student_id):
     4. **Resolve inconsistencies in time and format**:
     - Ensure start times are earlier than end times. If the data is unclear, infer logical time ranges based on context (e.g., morning or afternoon).
     - Verify all numeric values, such as days and times, are correctly parsed from the OCR data.
+    - Each class must not exceed three sessions per week if the class name is the same.
+    - Define class duration as `end_time - start_time`, which must be fixed to 1.5 hours or 3 hours.
+    - If the extracted duration is not a multiple of 1.5 hours, round it to the nearest valid value (e.g., 1 hour → 1.5 hours).
+    - Ensure no two classes have overlapping times.
 
     5. **Preserve data integrity**:
     - Do not assume or add data beyond what is available in the OCR text.
@@ -236,6 +240,7 @@ def analyze_schedule_with_openai(ocr_text, student_name, student_id):
 
     Here is the OCR data extracted from the timetable image: {ocr_text}
     """
+
     
     try:
         # OpenAI ChatCompletion 호출
